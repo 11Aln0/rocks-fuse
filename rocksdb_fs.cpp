@@ -69,9 +69,9 @@ int rocksdb_fs::mkdir(const char* path) {
     }
 
     // get file name
-    int i = sizeof(path) - 1;
-    while(i >= 0 && path[i--] != '/') path--;
-    rfs_dentry_d* dentry_d = new_dentry_d(path + 1, dir);
+    int i = strlen(path);
+    while(i >= 0 && path[i] != '/') i--;
+    rfs_dentry_d* dentry_d = new_dentry_d(path + i + 1, dir);
     add_dentry_d(last_dentry, dentry_d);
 
     free_dentry(last_dentry);
@@ -130,7 +130,7 @@ int rocksdb_fs::readdir(const char *path, void *buf, fuse_fill_dir_t filter) {
     return 0;
 }
 
-int rocksdb_fs::mknod(const char *path, mode_t mode, dev_t dev) {
+int rocksdb_fs::mknod(const char *path, mode_t mode) {
     bool found;
     rfs_dentry* last_dentry = lookup(path, &found);
     if (found) {
@@ -138,8 +138,41 @@ int rocksdb_fs::mknod(const char *path, mode_t mode, dev_t dev) {
     }
 
     // get file name
-    int i = sizeof(path) - 1;
-    while(i >= 0 && path[i--] != '/') path--;
+    int i = strlen(path);
+    while(i >= 0 && path[i] != '/') i--;
+
+    rfs_dentry_d* dentry_d;
+
+    if(mode & S_IFREG) {
+        dentry_d = new_dentry_d(path + i + 1, reg);
+    } else {
+        dentry_d = new_dentry_d(path + i + 1, dir);
+    }
+
+    add_dentry_d(last_dentry, dentry_d);
+
+    free_dentry(last_dentry);
+    delete dentry_d;
+
+    return 0;
+
+}
+
+int rocksdb_fs::write(const char *path, const char *buf, size_t size, off_t offset) {
+    bool found;
+    rfs_dentry* parent_dentry = lookup(path, &found, true);
+    if(!found) {
+        return -ENOENT;
+    }
+
+    if(parent_dentry->ftype != dir) {
+        return -ENOTDIR;
+    }
+
+
+    
+
+
 
 }
 

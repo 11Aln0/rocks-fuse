@@ -25,33 +25,55 @@ inode* rocksdb_fs::read_inode(int ino) {
 
 }
 
+void rocksdb_fs::write_inode(int ino, inode *inode, size_t size) {
+    char key[20];
+    sprintf(key, "%d", ino);
+    if(inode == nullptr) {
+        db->Put(WriteOptions(), key, Slice());
+    } else {
+        db->Put(WriteOptions(), key, Slice((char*)inode->data, size));
+    }
+}
+
+
 /**
- * @param path
+ * @param parent whether to get parent directory entry
  * @return the last directory entry that can be retrieved
  * returning nullptr means that a directory has corrupted
  */
-rfs_dentry* rocksdb_fs::lookup(const char *path, bool* found) {
+rfs_dentry* rocksdb_fs::lookup(const char *path, bool* found, bool parent) {
 
-    rfs_dentry* dentry_ret = new rfs_dentry;
+    auto dentry_ret = new rfs_dentry;
 
     // copy root directory entry to ret
     dentry_ret->ftype = dir;
+    dentry_ret->parent_ino = SUPER_BLOCK_INO;
     strcpy(dentry_ret->name, "/");
     dentry_ret->ino = ROOT_DENTRY_INO;
     dentry_ret->inode = read_inode(ROOT_DENTRY_INO);
 
     // if path is root path
     if(path[0] == '/' && strlen(path) == 1) {
+        if(parent) return nullptr;
         return dentry_ret;
     }
 
-    char* path_cpy = new char[sizeof(path)];
-    strcpy(path_cpy, path);
+    size_t size;
+    int i = strlen(path);
+    if(parent) {
+        while(i >= 0 && path[i] != '/') i--;
+        size = i + 1;
+    } else {
+        size = strlen(path) + 1;
+    }
+    char* path_cpy = new char[size];
+    memcpy(path_cpy, path, size);
+    if(parent) path_cpy[i] = '\0';
     char* dir_name = strtok(path_cpy, "/");
     *found = true;
 
     rfs_dentry_d* dentry_cursor;
-    inode* i;
+    inode* inode;
     int k;
     size_t dir_cnt;
 
@@ -75,22 +97,24 @@ rfs_dentry* rocksdb_fs::lookup(const char *path, bool* found) {
             break;
         }
 
+        dentry_ret->parent_ino = dentry_ret->ino;
         dentry_ret->ftype = dentry_cursor->ftype;
         dentry_ret->size = dentry_cursor->size;
         dentry_ret->ino = dentry_cursor->ino;
         strcpy(dentry_ret->name, dentry_cursor->name);
         delete []dentry_ret->inode->data;
         delete dentry_ret->inode;
-        i = read_inode(dentry_ret->ino);
+        inode = read_inode(dentry_ret->ino);
         // corrupted
-        if(i == nullptr) {
+        if(inode == nullptr) {
             delete dentry_ret;
             return nullptr;
         }
-        dentry_ret->inode = i;
+        dentry_ret->inode = inode;
 
         dir_name = strtok(nullptr, "/");
     }
+    delete []path_cpy;
     return dentry_ret;
 }
 
@@ -113,12 +137,9 @@ void rocksdb_fs::add_dentry_d(rfs_dentry* parent, rfs_dentry_d *dentry_d) {
     memcpy((rfs_dentry_d*)parent->inode->data + dir_cnt - 1, dentry_d, sizeof(rfs_dentry_d));
 
     // write back to parent inode
-    char key[20];
-    sprintf(key, "%d", parent->ino);
-    db->Put(WriteOptions(), key, Slice((char*)parent->inode->data, parent->size));
+    write_inode(parent->ino, parent->inode, parent->size);
     // write back to new inode
-    sprintf(key, "%d", dentry_d->ino);
-    db->Put(WriteOptions(), key, Slice());
+    write_inode(dentry_d->ino, nullptr, 0);
 
 }
 

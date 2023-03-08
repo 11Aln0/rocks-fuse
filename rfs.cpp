@@ -45,12 +45,17 @@ int rfs_mkdir(const char* path, mode_t mode) {
     return fs.mkdir(path);
 }
 
-int rfs_getattr(const char* path, struct stat* stat) {
+int rfs_getattr(const char* path, struct stat* stat, fuse_file_info *fi) {
     return fs.getattr(path, stat);
 }
 
-int rfs_readdir(const char* path, void* buf, fuse_fill_dir_t filter, off_t offset, struct fuse_file_info* fi) {
+int rfs_readdir(const char* path, void* buf,fuse_fill_dir_t filter,
+                off_t offset, struct fuse_file_info* fi, fuse_readdir_flags flags) {
     return fs.readdir(path, buf, filter);
+}
+
+int rfs_mknod(const char* path, mode_t mode, dev_t dev) {
+    return fs.mknod(path, mode);
 }
 
 
@@ -62,8 +67,11 @@ void show_help() {
 }
 
 static const fuse_operations rfs_oper = {
+        .getattr = rfs_getattr,
         .init = rfs_init,
         .destroy = rfs_destroy,
+        .readdir = rfs_readdir,
+        .mknod = rfs_mknod,
         .mkdir = rfs_mkdir,
 };
 
