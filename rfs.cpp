@@ -58,6 +58,17 @@ int rfs_mknod(const char* path, mode_t mode, dev_t dev) {
     return fs.mknod(path, mode);
 }
 
+int rfs_read (const char* path, char* buf, size_t size, off_t offset, fuse_file_info * fi) {
+    return fs.read(path, buf, size, offset);
+}
+
+int rfs_write(const char* path, const char* buf, size_t size, off_t offset, fuse_file_info* fi) {
+    return fs.write(path, buf, size, offset);
+}
+
+int rfs_rmdir(const char* path) {
+    return fs.rmdir(path);
+}
 
 void show_help() {
     printf("File-system specific options:\n"
@@ -68,11 +79,14 @@ void show_help() {
 
 static const fuse_operations rfs_oper = {
         .getattr = rfs_getattr,
-        .init = rfs_init,
-        .destroy = rfs_destroy,
-        .readdir = rfs_readdir,
         .mknod = rfs_mknod,
         .mkdir = rfs_mkdir,
+        .rmdir = rfs_rmdir,
+        .read = rfs_read,
+        .write = rfs_write,
+        .readdir = rfs_readdir,
+        .init = rfs_init,
+        .destroy = rfs_destroy,
 };
 
 int main(int argc, char *argv[])
@@ -95,25 +109,4 @@ int main(int argc, char *argv[])
 
     return ret;
 
-    std::string sKey("key-one2");
-    std::string sValue("Value Some");
-
-    status = db->Put(rocksdb::WriteOptions(), sKey, sValue);
-    if (status.ok())
-    {
-        std::cout << "put key ok" << std::endl;
-        std::string rValue;
-        rocksdb::Status s = db->Get(rocksdb::ReadOptions(), sKey, &rValue);
-        if (s.ok()) {
-            std::cout << "read from rocksdb success: " << rValue << std::endl;
-        }
-    }
-    else
-    {
-        std::cout << "put key error, with status: " << status.code() << std::endl;
-    }
-
-    db->Close();
-
-    return 0;
 }

@@ -31,10 +31,12 @@ private:
 private:
     inode* read_inode(int ino);
     void write_inode(int ino, inode* inode, size_t size);
-    rfs_dentry* lookup(const char* path, bool *found, bool parent = false);
+    void drop_inode(int ino);
+    rfs_dentry* lookup(char* path, bool *found);
     rfs_dentry_d* new_dentry_d(const char* fname, file_type ftype);
 
     void add_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
+    void drop_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
     void free_dentry(rfs_dentry* dentry);
 
 public:
@@ -46,7 +48,8 @@ public:
     int readdir(const char* path, void* buf, fuse_fill_dir_t filter);
     int mknod(const char* path, mode_t mode);
     int write(const char* path, const char* buf, size_t size, off_t offset);
-
+    int read(const char* path, char* buf, size_t size, off_t offset);
+    int rmdir(const char* path);
 };
 
 

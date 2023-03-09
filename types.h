@@ -34,7 +34,6 @@ struct rfs_dentry {
     size_t size;
     char name[24];
 
-    int parent_ino; // parent's inode number
     inode* inode;
 };
 
