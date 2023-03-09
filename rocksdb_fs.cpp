@@ -23,7 +23,7 @@ int rocksdb_fs::mount() {
         return -1;
     }
     string rV;
-    Status s = db->Get(ReadOptions(), "0", &rV); // root dir entry resides in inode 0
+    Status s = db->Get(ReadOptions(), "0", &rV); // root dir entry resides in _inode 0
     super_block_d* super_d;
     if(s.code() == Status::Code::kNotFound) {
         // mounted for the first time
@@ -34,7 +34,7 @@ int rocksdb_fs::mount() {
             RFS_DEBUG("rfs::mount", "fs init failed");
             return -1;
         }
-        s = db->Put(WriteOptions(), "1", Slice()); // write root dir inode
+        s = db->Put(WriteOptions(), "1", Slice()); // write root dir _inode
         if(!s.ok()) {
             RFS_DEBUG("rfs::mount", "fs init failed");
             return -1;
@@ -127,7 +127,7 @@ int rocksdb_fs::readdir(const char *path, void *buf, fuse_fill_dir_t filter) {
         goto defer;
     }
 
-    dentry_cursor = (rfs_dentry_d*) dentry->inode->data;
+    dentry_cursor = (rfs_dentry_d*) dentry->_inode->data;
     dir_cnt = dentry->size / sizeof(rfs_dentry_d);
     for(int i = 0;i < dir_cnt;i++) {
         if(dentry->ftype == dir) {
@@ -181,7 +181,7 @@ int rocksdb_fs::mknod(const char *path, mode_t mode) {
 int rocksdb_fs::write(const char *path, const char *buf, size_t size, off_t offset) {
     int ret, i_fname;
     bool found;
-    inode* inode = nullptr;
+    inode* target_inode = nullptr;
     rfs_dentry_d* dentry_cursor;
 
 
@@ -204,7 +204,7 @@ int rocksdb_fs::write(const char *path, const char *buf, size_t size, off_t offs
     }
 
     // get target file directory entry
-    dentry_cursor = (rfs_dentry_d*)parent_dentry->inode;
+    dentry_cursor = (rfs_dentry_d*)parent_dentry->_inode;
     i_fname = parent_dentry->size / sizeof(rfs_dentry_d);
     for(;i_fname > 0;i_fname--, dentry_cursor++) {
         if(strcmp(dentry_cursor->name, path + k + 1) == 0) {
@@ -229,15 +229,15 @@ int rocksdb_fs::write(const char *path, const char *buf, size_t size, off_t offs
     }
 
     //
-    inode = read_inode(dentry_cursor->ino);
-    memcpy(inode->data + offset, buf, size);
-    write_inode(dentry_cursor->ino, inode, dentry_cursor->size);
-    write_inode(parent_dentry->ino, parent_dentry->inode, parent_dentry->size);
+    target_inode = read_inode(dentry_cursor->ino);
+    memcpy(target_inode->data + offset, buf, size);
+    write_inode(dentry_cursor->ino, target_inode, dentry_cursor->size);
+    write_inode(parent_dentry->ino, parent_dentry->_inode, parent_dentry->size);
     ret = dentry_cursor->size;
 
     defer:
     delete []parent_path;
-    delete inode;
+    delete target_inode;
     free_dentry(parent_dentry);
     return ret;
 }
@@ -264,7 +264,7 @@ int rocksdb_fs::read(const char *path, char *buf, size_t size, off_t offset) {
     }
 
     size = std::min(dentry->size - offset, size);
-    memcpy(buf, dentry->inode->data + offset, size);
+    memcpy(buf, dentry->_inode->data + offset, size);
     ret = size;
 
     defer:
@@ -276,7 +276,6 @@ int rocksdb_fs::read(const char *path, char *buf, size_t size, off_t offset) {
 int rocksdb_fs::rmdir(const char *path) {
     int ret, i_fname;
     bool found;
-    inode* inode = nullptr;
     rfs_dentry_d* dentry_cursor;
 
     // remove the filename
@@ -294,7 +293,7 @@ int rocksdb_fs::rmdir(const char *path) {
     }
 
     // get target file directory entry
-    dentry_cursor = (rfs_dentry_d*)parent_dentry->inode;
+    dentry_cursor = (rfs_dentry_d*)parent_dentry->_inode;
     i_fname = parent_dentry->size / sizeof(rfs_dentry_d);
     for(;i_fname > 0;i_fname--, dentry_cursor++) {
         if(strcmp(dentry_cursor->name, path + k + 1) == 0) {

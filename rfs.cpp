@@ -2,9 +2,6 @@
 // Created by aln0 on 3/6/23.
 //
 
-#define FUSE_USE_VERSION 31
-
-
 #include<iostream>
 #include "rocksdb_fs.h"
 
@@ -94,7 +91,7 @@ int main(int argc, char *argv[])
 
     fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-    fuse_opts.dbpath = "./db";
+    fuse_opts.dbpath = strdup("./db");
     if(fuse_opt_parse(&args, &fuse_opts, option_spec, NULL) == -1) {
         return 1;
     }
@@ -108,5 +105,4 @@ int main(int argc, char *argv[])
     fuse_opt_free_args(&args);
 
     return ret;
-
 }

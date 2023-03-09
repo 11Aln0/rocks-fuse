@@ -23,7 +23,7 @@ struct inode {
 
 struct rfs_dentry_d {
     int ino;
-    file_type ftype; // sizeof inode
+    file_type ftype; // sizeof _inode
     size_t size;
     char name[24];
 };
@@ -34,7 +34,7 @@ struct rfs_dentry {
     size_t size;
     char name[24];
 
-    inode* inode;
+    inode* _inode;
 };
 
 struct super_block {

@@ -4,6 +4,7 @@
 
 #ifndef ROCKS_FUSE_ROCKSDB_FS_H
 #define ROCKS_FUSE_ROCKSDB_FS_H
+#define FUSE_USE_VERSION 31
 
 #include "rocksdb/db.h"
 #include "fuse.h"

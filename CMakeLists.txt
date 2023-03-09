@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.20)
 project(rocks_fuse)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -13,7 +13,7 @@ find_path(ROCKSDB_INCLUDE_DIR rocksdb/db.h PATHS)
 
 include_directories(${ROCKSDB_INCLUDE_DIR} ${FUSE_INCLUDE_DIR})
 
-find_library(ROCKSDB_LIB rocksdb)
+set(ROCKSDB_LIB "/usr/local/rocksdb/lib/librocksdb.a")
 set(FUSE_LIB "/usr/lib/x86_64-linux-gnu/libfuse3.so.3.10.5")
 
 
