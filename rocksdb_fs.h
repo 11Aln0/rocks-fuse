@@ -19,7 +19,7 @@ using rocksdb::Slice;
 using rocksdb::ReadOptions;
 using rocksdb::WriteOptions;
 
-#define RFS_DEBUG(fn, msg) do {printf("RFS_DEBUG:[%s] %s", fn, msg); } while(0)
+#define RFS_DEBUG(fn, msg) do {printf("RFS_DEBUG:[%s] %s\n", fn, msg); } while(0)
 
 
 class rocksdb_fs {
@@ -30,15 +30,18 @@ private:
     mutex ino_lock;
 
 private:
-    inode* read_inode(int ino);
-    void write_inode(int ino, inode* inode, size_t size);
-    void drop_inode(int ino);
-    rfs_dentry* lookup(char* path, bool *found);
+    inode* read_inode(uint64_t ino);
+    void write_inode(uint64_t ino, inode* i);
+    void drop_inode(uint64_t ino);
+    rfs_dentry* lookup(char* path, bool &found);
     rfs_dentry_d* new_dentry_d(const char* fname, file_type ftype);
 
+    rfs_dentry_d* find_dentry(rfs_dentry* parent, const char* name);
     void add_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
     void drop_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
     void free_dentry(rfs_dentry* dentry);
+
+    char* parent_path(const char* path, int& div_idx);
 
 public:
     int connect(const char *dbpath);

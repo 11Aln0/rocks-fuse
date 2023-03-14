@@ -67,6 +67,10 @@ int rfs_rmdir(const char* path) {
     return fs.rmdir(path);
 }
 
+int rfs_utimens(const char* path, const timespec tv[2], fuse_file_info* fi){
+    return 0;
+}
+
 void show_help() {
     printf("File-system specific options:\n"
            "    --dbpath=<s>        Path to save rocksdb's persistent file"
@@ -84,6 +88,8 @@ static const fuse_operations rfs_oper = {
         .readdir = rfs_readdir,
         .init = rfs_init,
         .destroy = rfs_destroy,
+        .utimens = rfs_utimens,
+
 };
 
 int main(int argc, char *argv[])

@@ -15,6 +15,7 @@ enum file_type {
 
 struct inode {
     uint8_t* data;
+    size_t size; // size of the data
 };
 
 //struct inode_d {
@@ -22,28 +23,26 @@ struct inode {
 //};
 
 struct rfs_dentry_d {
-    int ino;
-    file_type ftype; // sizeof _inode
-    size_t size;
+    uint64_t ino;
+    file_type ftype;
     char name[24];
 };
 
 struct rfs_dentry {
     int ino;
     file_type ftype;
-    size_t size;
     char name[24];
 
     inode* _inode;
 };
 
 struct super_block {
-    int cur_ino;
+    uint64_t cur_ino;
     rfs_dentry_d root_dentry;
 };
 
 struct super_block_d {
-    int cur_ino;
+    uint64_t cur_ino;
 };
 
 
