@@ -23,7 +23,7 @@ int rocksdb_fs::mount() {
         return -1;
     }
     string rV;
-    Status s = db->Get(ReadOptions(), "0", &rV); // root dir entry resides in _inode 0
+    Status s = db->Get(ReadOptions(), "0", &rV); // root dir entry resides in inode 0
     super_block_d* super_d;
     if(s.code() == Status::Code::kNotFound) {
         // mounted for the first time
@@ -34,8 +34,7 @@ int rocksdb_fs::mount() {
             RFS_DEBUG("rfs::mount", "fs init failed");
             return -1;
         }
-        size_t size = 0;
-        s = db->Put(WriteOptions(), "1", Slice((char*)(&size), sizeof(size_t))); // write root dir _inode
+        s = db->Put(WriteOptions(), "1", Slice()); // write root dir inode
         if(!s.ok()) {
             RFS_DEBUG("rfs::mount", "fs init failed");
             return -1;
@@ -61,8 +60,8 @@ int rocksdb_fs::close() {
 
 int rocksdb_fs::mkdir(const char* path) {
     bool found;
-    char* path_cpy = strdup(path);
-    rfs_dentry* last_dentry = lookup(path_cpy, found);
+    auto path_cpy = unique_ptr<char>(strdup(path));
+    auto last_dentry = lookup(path_cpy.get(), found);
     if(found) {
         return -EEXIST;
     }
@@ -73,25 +72,19 @@ int rocksdb_fs::mkdir(const char* path) {
     // get file name
     int i = strlen(path);
     while(i >= 0 && path[i] != '/') i--;
-    rfs_dentry_d* dentry_d = new_dentry_d(path + i + 1, dir);
-    add_dentry_d(last_dentry, dentry_d);
+    auto dentry_d = unique_ptr<rfs_dentry_d>(new_dentry_d(path + i + 1, dir));
+    add_dentry_d(last_dentry.get(), dentry_d.get());
 
-    free_dentry(last_dentry);
-    delete dentry_d;
-    delete path_cpy;
     return 0;
-
 }
 
 int rocksdb_fs::getattr(const char *path, struct stat *stat) {
-    int ret = 0;
     bool found;
 
-    char* path_cpy = strdup(path);
-    rfs_dentry* dentry = lookup(path_cpy, found);
+    auto path_cpy = unique_ptr<char>(strdup(path));
+    auto dentry = lookup(path_cpy.get(), found);
     if(!found) {
-        ret = -ENOENT;
-        goto defer;
+        return  -ENOENT;
     }
 
     if(dentry->ftype == dir) {
@@ -101,202 +94,147 @@ int rocksdb_fs::getattr(const char *path, struct stat *stat) {
     }
 
     stat->st_nlink = 1;
-    stat->st_size = dentry->_inode->size;
+    stat->st_size = dentry->inode->d_size;
 
-    defer:
-    free_dentry(dentry);
-    delete path_cpy;
-    return ret;
+    return 0;
 }
 
 int rocksdb_fs::readdir(const char *path, void *buf, fuse_fill_dir_t filter) {
-    int ret = 0;
     bool found;
-    rfs_dentry_d* dentry_cursor;
-    size_t dir_cnt;
-    struct stat stat = {};
-    inode* cur_inode;
+    auto path_cpy = unique_ptr<char>(strdup(path));
+    auto dentry = lookup(path_cpy.get(), found);
 
-    char* path_cpy = strdup(path);
-    rfs_dentry* dentry = lookup(path_cpy, found);
     if(!found) {
-        ret = -ENOENT;
-        goto defer;
+        return -ENOENT;
     }
 
     if(dentry->ftype == reg) {
-        ret = -ENOTDIR;
-        goto defer;
+        return -ENOTDIR;
     }
 
-    dentry_cursor = (rfs_dentry_d*) dentry->_inode->data;
-    dir_cnt = dentry->_inode->size / sizeof(rfs_dentry_d);
+    auto dentry_cursor = (rfs_dentry_d*) dentry->inode->data();
+    unique_ptr<inode_t> cur_inode;
+    size_t dir_cnt = dentry->inode->d_size / sizeof(rfs_dentry_d);
+    struct stat stat = {};
+
     for(int i = 0;i < dir_cnt;i++, dentry_cursor++) {
         if(dentry->ftype == dir) {
             stat.st_mode = S_IFDIR | 0777;
         } else {
             stat.st_mode = S_IFREG | 0777;
         }
-        cur_inode = read_inode(dentry->ino);
+        cur_inode = unique_ptr<inode_t>(read_inode(dentry->ino));
         stat.st_nlink = 1;
-        stat.st_size = cur_inode->size;
-        delete cur_inode->data;
-        delete cur_inode;
+        stat.st_size = cur_inode->d_size;
         filter(buf, dentry_cursor->name, &stat, 0, FUSE_FILL_DIR_PLUS);
     }
 
-    defer:
-    free_dentry(dentry);
-    delete []path_cpy;
-    return ret;
+    return 0;
 }
 
 int rocksdb_fs::mknod(const char *path, mode_t mode) {
-    int ret = 0;
     bool found;
-    rfs_dentry_d* dentry_d = nullptr;
-
     int i = strlen(path);
-    char* path_cpy = strdup(path);
-    rfs_dentry* last_dentry = lookup(path_cpy, found);
+    auto path_cpy = unique_ptr<char>(strdup(path));
+    auto last_dentry = lookup(path_cpy.get(), found);
+
     if (found) {
-        ret = -EEXIST;
-        goto defer;
+        return -EEXIST;
     }
 
-    // get file name
+    // get file name index
     while(i >= 0 && path[i] != '/') i--;
 
+    unique_ptr<rfs_dentry_d> dentry_d;
     if(mode & S_IFREG) {
-        dentry_d = new_dentry_d(path + i + 1, reg);
+        dentry_d = unique_ptr<rfs_dentry_d>(new_dentry_d(path + i + 1, reg));
     } else {
-        dentry_d = new_dentry_d(path + i + 1, dir);
+        dentry_d = unique_ptr<rfs_dentry_d>(new_dentry_d(path + i + 1, dir));
     }
 
-    add_dentry_d(last_dentry, dentry_d);
+    add_dentry_d(last_dentry.get(), dentry_d.get());
 
-    defer:
-    free_dentry(last_dentry);
-    delete dentry_d;
-    delete []path_cpy;
-    return ret;
-
+    return 0;
 }
 
 int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offset) {
-    int ret;
     bool found;
-    inode* target_inode = nullptr;
-    rfs_dentry_d* target_dentry;
-
     int k;
-    char* p_path = parent_path(path, k);
-    rfs_dentry* parent_dentry = lookup(p_path, found);
+    auto p_path = unique_ptr<char>(parent_path(path, k));
+    auto parent_dentry = lookup(p_path.get(), found);
     if(!found) {
-        ret = -ENOENT;
-        goto defer;
+        return -ENOENT;
     }
 
     if(parent_dentry->ftype != dir) {
-        ret = -ENOTDIR;
-        goto defer;
+        return -ENOTDIR;
     }
 
-    target_dentry = find_dentry(parent_dentry, path + k + 1);
+    auto target_dentry = find_dentry(parent_dentry.get(), path + k + 1);
     if(target_dentry == nullptr) {
-        ret = -ENOENT;
-        goto defer;
+        return -ENOENT;
     }
 
     if(target_dentry->ftype == dir) {
-        ret = -EISDIR;
-        goto defer;
+        return -EISDIR;
     }
 
     size = strlen(buf);
-    target_inode = read_inode(target_dentry->ino);
-    if(offset > target_inode->size) {
-        ret = 0;
-        goto defer;
-    }
-    target_inode->size = offset + size > target_inode->size ? offset + size : target_inode->size;
-    if(target_inode->size> 1 << 12) {
-        ret = -EFBIG;
-        goto defer;
+    auto target_inode = unique_ptr<inode_t>(read_inode(target_dentry->ino));
+    if(offset > target_inode->d_size) {
+        return 0;
     }
 
-    target_inode->data = (uint8_t *)realloc(target_inode->data, target_inode->size);
-    memcpy(target_inode->data + offset, buf, size);
-    write_inode(target_dentry->ino, target_inode);
-    ret = size;
+    size_t n_size = offset + size;
+    if(n_size > 1 << 12) {
+        return -EFBIG;
+    }
 
-    defer:
-    delete []p_path;
-    delete target_inode->data;
-    delete target_inode;
-    free_dentry(parent_dentry);
-    return ret;
+    target_inode->write_data(buf, size, offset);
+    write_inode(target_dentry->ino, target_inode.get());
+
+    return size;
 }
 
 int rocksdb_fs::read(const char *path, char *buf, size_t size, off_t offset) {
-    int ret;
     bool found;
-    char* path_cpy = strdup(path);
-    rfs_dentry* dentry = lookup(path_cpy, found);
+    auto path_cpy = unique_ptr<char>(strdup(path));
+    auto dentry = lookup(path_cpy.get(), found);
 
     if(!found) {
-        ret = -ENOENT;
-        goto defer;
+        return -ENOENT;
     }
 
     if(dentry->ftype == dir) {
-        ret = -EISDIR;
-        goto defer;
+        return -EISDIR;
     }
 
-    if(offset >= dentry->_inode->size) {
-        ret = 0;
-        goto defer;
+    if(offset >= dentry->inode->d_size) {
+        return 0;
     }
 
-    size = std::min(dentry->_inode->size - offset, size);
-    memcpy(buf, dentry->_inode->data + offset, size);
-    ret = size;
-
-    defer:
-    free_dentry(dentry);
-    delete path_cpy;
-    return ret;
+    size = std::min(dentry->inode->d_size - offset, size);
+    memcpy(buf, dentry->inode->data() + offset, size);
+    return size;
 }
 
 int rocksdb_fs::rmdir(const char *path) {
-    int ret = 0;
     bool found;
-    rfs_dentry_d* target_dentry;
-
     int k;
-    char* p_path = parent_path(path, k);
-
-    rfs_dentry* parent_dentry = lookup(p_path, found);
+    auto p_path = unique_ptr<char>(parent_path(path, k));
+    auto parent_dentry = lookup(p_path.get(), found);
 
     if(!found) {
-        ret = -ENOENT;
-        goto defer;
+        return -ENOENT;
     }
 
-    target_dentry = find_dentry(parent_dentry, path + k + 1);
+    rfs_dentry_d* target_dentry = find_dentry(parent_dentry.get(), path + k + 1);
     if(target_dentry == nullptr) {
-        ret = -ENOENT;
-        goto defer;
+        return -ENOENT;
     }
+    drop_dentry_d(parent_dentry.get(), target_dentry);
 
-    drop_dentry_d(parent_dentry, target_dentry);
-
-    defer:
-    free_dentry(parent_dentry);
-    delete []p_path;
-    return ret;
-
+    return 0;
 }
 
 

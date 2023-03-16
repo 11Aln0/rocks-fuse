@@ -21,7 +21,6 @@ using rocksdb::WriteOptions;
 
 #define RFS_DEBUG(fn, msg) do {printf("RFS_DEBUG:[%s] %s\n", fn, msg); } while(0)
 
-
 class rocksdb_fs {
 
 private:
@@ -30,16 +29,16 @@ private:
     mutex ino_lock;
 
 private:
-    inode* read_inode(uint64_t ino);
-    void write_inode(uint64_t ino, inode* i);
+    inode_t* read_inode(uint64_t ino);
+    void write_inode(uint64_t ino, const inode_t* inode);
     void drop_inode(uint64_t ino);
-    rfs_dentry* lookup(char* path, bool &found);
-    rfs_dentry_d* new_dentry_d(const char* fname, file_type ftype);
 
+    unique_ptr<rfs_dentry> lookup(char* path, bool &found);
+
+    rfs_dentry_d* new_dentry_d(const char* fname, file_type ftype);
     rfs_dentry_d* find_dentry(rfs_dentry* parent, const char* name);
     void add_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
     void drop_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
-    void free_dentry(rfs_dentry* dentry);
 
     char* parent_path(const char* path, int& div_idx);
 
@@ -48,12 +47,12 @@ public:
     int mount();
     int close();
     int mkdir(const char* path);
+    int rmdir(const char* path);
     int getattr(const char* path, struct stat* stat);
     int readdir(const char* path, void* buf, fuse_fill_dir_t filter);
     int mknod(const char* path, mode_t mode);
     int write(const char* path, const char* buf, size_t size, off_t offset);
     int read(const char* path, char* buf, size_t size, off_t offset);
-    int rmdir(const char* path);
 };
 
 
