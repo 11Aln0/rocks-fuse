@@ -39,6 +39,7 @@ private:
     rfs_dentry_d* find_dentry(rfs_dentry* parent, const char* name);
     void add_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
     void drop_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
+    void drop_dentry_d(const rfs_dentry_d* dentry_d);
 
     char* parent_path(const char* path, int& div_idx);
 
@@ -51,6 +52,7 @@ public:
     int getattr(const char* path, struct stat* stat);
     int readdir(const char* path, void* buf, fuse_fill_dir_t filter);
     int mknod(const char* path, mode_t mode);
+    int unlink(const char*path);
     int write(const char* path, const char* buf, size_t size, off_t offset);
     int read(const char* path, char* buf, size_t size, off_t offset);
 };

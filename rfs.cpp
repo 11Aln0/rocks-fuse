@@ -67,6 +67,10 @@ int rfs_rmdir(const char* path) {
     return fs.rmdir(path);
 }
 
+int rfs_unlink(const char* path) {
+    return fs.unlink(path);
+}
+
 int rfs_utimens(const char* path, const timespec tv[2], fuse_file_info* fi){
     return 0;
 }
@@ -82,6 +86,7 @@ static const fuse_operations rfs_oper = {
         .getattr = rfs_getattr,
         .mknod = rfs_mknod,
         .mkdir = rfs_mkdir,
+        .unlink = rfs_unlink,
         .rmdir = rfs_rmdir,
         .read = rfs_read,
         .write = rfs_write,

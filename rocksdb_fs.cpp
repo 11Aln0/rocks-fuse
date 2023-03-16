@@ -181,7 +181,7 @@ int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offs
 
     size = strlen(buf);
     auto target_inode = unique_ptr<inode_t>(read_inode(target_dentry->ino));
-    if(offset > target_inode->d_size) {
+    if(offset > target_inode->d_size ) {
         return 0;
     }
 
@@ -219,6 +219,10 @@ int rocksdb_fs::read(const char *path, char *buf, size_t size, off_t offset) {
 }
 
 int rocksdb_fs::rmdir(const char *path) {
+    return unlink(path);
+}
+
+int rocksdb_fs::unlink(const char *path) {
     bool found;
     int k;
     auto p_path = unique_ptr<char>(parent_path(path, k));
@@ -232,6 +236,7 @@ int rocksdb_fs::rmdir(const char *path) {
     if(target_dentry == nullptr) {
         return -ENOENT;
     }
+
     drop_dentry_d(parent_dentry.get(), target_dentry);
 
     return 0;
