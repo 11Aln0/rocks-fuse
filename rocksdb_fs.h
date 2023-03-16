@@ -11,9 +11,12 @@
 #include "types.h"
 #include <string>
 #include <mutex>
+//#include <map>
 
+using std::map;
 using std::mutex;
 using std::string;
+using rocksdb::DB;
 using rocksdb::Status;
 using rocksdb::Slice;
 using rocksdb::ReadOptions;
@@ -24,9 +27,10 @@ using rocksdb::WriteOptions;
 class rocksdb_fs {
 
 private:
-    rocksdb::DB* db;
+    DB* db;
     super_block super;
     mutex ino_lock;
+//    map<uint64_t, shared_ptr<inode_t>> cache;
 
 private:
     inode_t* read_inode(uint64_t ino);
@@ -53,8 +57,10 @@ public:
     int readdir(const char* path, void* buf, fuse_fill_dir_t filter);
     int mknod(const char* path, mode_t mode);
     int unlink(const char*path);
-    int write(const char* path, const char* buf, size_t size, off_t offset);
+    int write(const char* path, const char* buf, size_t size, off_t offset, fuse_file_info* fi);
     int read(const char* path, char* buf, size_t size, off_t offset);
+    int open(const char* path, fuse_file_info* fi);
+    int create(const char* path, mode_t mode, fuse_file_info* fi);
 };
 
 

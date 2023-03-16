@@ -2,10 +2,10 @@
 // Created by aln0 on 3/6/23.
 //
 
-#include<iostream>
 #include "rocksdb_fs.h"
+#include <functional>
 
-using namespace std;
+using std::bind;
 
 struct fuse_options {
      const char *dbpath;
@@ -60,7 +60,7 @@ int rfs_read (const char* path, char* buf, size_t size, off_t offset, fuse_file_
 }
 
 int rfs_write(const char* path, const char* buf, size_t size, off_t offset, fuse_file_info* fi) {
-    return fs.write(path, buf, size, offset);
+    return fs.write(path, buf, size, offset, fi);
 }
 
 int rfs_rmdir(const char* path) {
@@ -72,6 +72,22 @@ int rfs_unlink(const char* path) {
 }
 
 int rfs_utimens(const char* path, const timespec tv[2], fuse_file_info* fi){
+    return 0;
+}
+
+int rfs_fsync(const char* path, int, fuse_file_info *) {
+    return 0; // does not support cache currently
+}
+
+int rfs_open(const char* path, fuse_file_info* fi) {
+    return fs.open(path, fi);
+}
+
+int rfs_create(const char* path, mode_t mode, fuse_file_info* fi) {
+    return fs.create(path, mode, fi);
+}
+
+int rfs_release(const char* path, fuse_file_info * fi) {
     return 0;
 }
 
@@ -88,13 +104,16 @@ static const fuse_operations rfs_oper = {
         .mkdir = rfs_mkdir,
         .unlink = rfs_unlink,
         .rmdir = rfs_rmdir,
+        .open = rfs_open,
         .read = rfs_read,
         .write = rfs_write,
+        .release = rfs_release,
+        .fsync = rfs_fsync,
         .readdir = rfs_readdir,
         .init = rfs_init,
         .destroy = rfs_destroy,
+        .create = rfs_create,
         .utimens = rfs_utimens,
-
 };
 
 int main(int argc, char *argv[])

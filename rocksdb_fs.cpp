@@ -4,6 +4,7 @@
 
 #include "rocksdb_fs.h"
 #include "types.h"
+#include <unistd.h>
 
 int rocksdb_fs::connect(const char *dbpath) {
     rocksdb::Options options;
@@ -92,7 +93,8 @@ int rocksdb_fs::getattr(const char *path, struct stat *stat) {
     } else {
         stat->st_mode = S_IFREG | 0777;
     }
-
+    stat->st_gid = getgid();
+    stat->st_uid = getuid();
     stat->st_nlink = 1;
     stat->st_size = dentry->inode->d_size;
 
@@ -157,31 +159,19 @@ int rocksdb_fs::mknod(const char *path, mode_t mode) {
     return 0;
 }
 
-int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offset) {
+int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offset, fuse_file_info* fi) {
     bool found;
-    int k;
-    auto p_path = unique_ptr<char>(parent_path(path, k));
-    auto parent_dentry = lookup(p_path.get(), found);
+    auto path_cpy = unique_ptr<char>(strdup(path));
+    auto dentry = lookup(path_cpy.get(), found);
     if(!found) {
         return -ENOENT;
     }
-
-    if(parent_dentry->ftype != dir) {
-        return -ENOTDIR;
-    }
-
-    auto target_dentry = find_dentry(parent_dentry.get(), path + k + 1);
-    if(target_dentry == nullptr) {
-        return -ENOENT;
-    }
-
-    if(target_dentry->ftype == dir) {
+    if(dentry->ftype == dir) {
         return -EISDIR;
     }
 
-    size = strlen(buf);
-    auto target_inode = unique_ptr<inode_t>(read_inode(target_dentry->ino));
-    if(offset > target_inode->d_size ) {
+
+    if(offset > dentry->inode->d_size) {
         return 0;
     }
 
@@ -190,8 +180,8 @@ int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offs
         return -EFBIG;
     }
 
-    target_inode->write_data(buf, size, offset);
-    write_inode(target_dentry->ino, target_inode.get());
+    dentry->inode->write_data(buf, size, offset);
+    write_inode(dentry->ino, dentry->inode.get());
 
     return size;
 }
@@ -241,5 +231,16 @@ int rocksdb_fs::unlink(const char *path) {
 
     return 0;
 }
+
+
+int rocksdb_fs::open(const char *path, struct fuse_file_info* fi) {
+    return 0;
+}
+
+int rocksdb_fs::create(const char *path, mode_t mode, fuse_file_info *fi) {
+    return mknod(path, mode);
+}
+
+
 
 
