@@ -18,5 +18,5 @@ set(FUSE_LIB "/usr/lib/x86_64-linux-gnu/libfuse3.so.3.10.5")
 
 
 add_executable(rocks_fuse
-        rfs.cpp types.h rocksdb_fs.cpp rocksdb_fs_utils.cpp inode_t.cpp)
+        entry.cpp types.h rocksdb_fs.cpp rocksdb_fs_utils.cpp inode_t.cpp)
 target_link_libraries(rocks_fuse ${ROCKSDB_LIB} ${FUSE_LIB})

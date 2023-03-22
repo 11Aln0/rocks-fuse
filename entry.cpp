@@ -52,11 +52,12 @@ int rfs_readdir(const char* path, void* buf,fuse_fill_dir_t filter,
 }
 
 int rfs_mknod(const char* path, mode_t mode, dev_t dev) {
-    return fs.mknod(path, mode);
+    int ret = fs.mknod(path, mode);
+    return ret < 0 ? ret : 0;
 }
 
 int rfs_read (const char* path, char* buf, size_t size, off_t offset, fuse_file_info * fi) {
-    return fs.read(path, buf, size, offset);
+    return fs.read(path, buf, size, offset, fi);
 }
 
 int rfs_write(const char* path, const char* buf, size_t size, off_t offset, fuse_file_info* fi) {
@@ -75,8 +76,8 @@ int rfs_utimens(const char* path, const timespec tv[2], fuse_file_info* fi){
     return 0;
 }
 
-int rfs_fsync(const char* path, int, fuse_file_info *) {
-    return 0; // does not support cache currently
+int rfs_fsync(const char* path, int, fuse_file_info* fi) {
+    return fs.fsync(fi);
 }
 
 int rfs_open(const char* path, fuse_file_info* fi) {
@@ -87,8 +88,12 @@ int rfs_create(const char* path, mode_t mode, fuse_file_info* fi) {
     return fs.create(path, mode, fi);
 }
 
-int rfs_release(const char* path, fuse_file_info * fi) {
-    return 0;
+int rfs_release(const char* path, fuse_file_info* fi) {
+    return fs.release(fi);
+}
+
+int rfs_truncate(const char* path, off_t size, struct fuse_file_info *fi) {
+    return fs.truncate(path, size, fi);
 }
 
 void show_help() {
@@ -98,12 +103,14 @@ void show_help() {
            "\n");
 }
 
+
 static const fuse_operations rfs_oper = {
         .getattr = rfs_getattr,
         .mknod = rfs_mknod,
         .mkdir = rfs_mkdir,
         .unlink = rfs_unlink,
         .rmdir = rfs_rmdir,
+        .truncate = rfs_truncate,
         .open = rfs_open,
         .read = rfs_read,
         .write = rfs_write,
@@ -133,6 +140,7 @@ int main(int argc, char *argv[])
 
     int ret = fuse_main(args.argc, args.argv, &rfs_oper, NULL);
     fuse_opt_free_args(&args);
+
 
     return ret;
 }

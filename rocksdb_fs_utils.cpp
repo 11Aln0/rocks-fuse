@@ -6,15 +6,16 @@
 
 #include "rocksdb_fs.h"
 
+using rocksdb::PinnableSlice;
 
 /**
  * @return  return nullptr means that an inode has corrupted
  */
 inode_t* rocksdb_fs::read_inode(uint64_t ino) {
-    string rV;
+    PinnableSlice rV;
     char key[20];
     sprintf(key, "%lu", ino);
-    Status s = db->Get(ReadOptions(), key, &rV);
+    Status s = db->Get(ReadOptions(), db->DefaultColumnFamily(), key, &rV);
     if(!s.ok()) {
         RFS_DEBUG("rfs::read_inode", "retrieve inode failed!");
         return nullptr;
@@ -26,20 +27,27 @@ inode_t* rocksdb_fs::read_inode(uint64_t ino) {
 
 /**
  * @param ino
- * @param inode null inode_t means empty inode_t
+ * @param inode
  */
-void rocksdb_fs::write_inode(uint64_t ino, const inode_t *inode) {
+int rocksdb_fs::write_inode(uint64_t ino, inode_t *inode) {
     char key[20];
     sprintf(key, "%lu", ino);
+    Status s;
     if(inode == nullptr) {
-        db->Put(WriteOptions(), key, Slice());
+        s = db->Put(WriteOptions(), key, Slice());
     } else {
-        db->Put(WriteOptions(), key, Slice((char*)inode->data(), inode->d_size));
+        inode->before_write_back();
+        s = db->Put(WriteOptions(), key, Slice((char*)inode->data(), inode->used_dat_sz));
     }
+
+    if(!s.ok()) {
+        RFS_DEBUG("rfs::write_inode", "fs init failed");
+        return -1;
+    }
+    return 0;
 }
 
 /**
- * drop inode recursively
  * @param ino
  */
 void rocksdb_fs::drop_inode(uint64_t ino) {
@@ -77,11 +85,12 @@ unique_ptr<rfs_dentry> rocksdb_fs::lookup(char *path, bool& found) {
     while(dir_name) {
         if(dentry_ret->ftype == dir) {
             dentry_cursor = (const rfs_dentry_d*)(dentry_ret->inode->data());
-            dir_cnt = dentry_ret->inode->d_size / sizeof(rfs_dentry_d);
-            for(k = 0;k < dir_cnt;k++, dentry_cursor++) {
+            dir_cnt = dentry_ret->inode->used_dat_sz / sizeof(rfs_dentry_d);
+            for(k = 0;k < dir_cnt;dentry_cursor++) {
                 if(strcmp(dentry_cursor->name, dir_name) == 0) {
                     break;
                 }
+                k++;
             }
             if(k == dir_cnt) {
                 RFS_DEBUG("rfs::lookup", "directory not found");
@@ -97,7 +106,7 @@ unique_ptr<rfs_dentry> rocksdb_fs::lookup(char *path, bool& found) {
         dentry_ret->ftype = dentry_cursor->ftype;
         dentry_ret->ino = dentry_cursor->ino;
         strcpy(dentry_ret->name, dentry_cursor->name);
-        dentry_ret->inode = unique_ptr<inode_t>(read_inode(dentry_ret->ino));
+        dentry_ret->inode = shared_ptr<inode_t>(read_inode(dentry_ret->ino));
         // corrupted
         if(dentry_ret->inode == nullptr) {
             return nullptr;
@@ -143,10 +152,10 @@ void rocksdb_fs::drop_dentry_d(rfs_dentry *parent, rfs_dentry_d* dentry_d) {
 void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
     if (dentry_d->ftype == dir) {
         auto inode = unique_ptr<inode_t>(read_inode(dentry_d->ino));
-        if (inode->d_size != 0) {
+        if (inode->used_dat_sz != 0) {
             auto dentry_cursor = (const rfs_dentry_d *) (inode->data());
-            size_t dir_cnt = inode->d_size / sizeof(rfs_dentry_d);
-            for (int i = 0; i < dir_cnt; i++) {
+            size_t dir_cnt = inode->used_dat_sz / sizeof(rfs_dentry_d);
+            for (size_t i = 0; i < dir_cnt;i++, dentry_cursor++) {
                 drop_dentry_d(dentry_cursor);
             }
         }
@@ -161,8 +170,8 @@ void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
  * @return
  */
 rfs_dentry_d* rocksdb_fs::find_dentry(rfs_dentry *parent, const char *name) {
-    rfs_dentry_d* dentry_cursor = (rfs_dentry_d*)parent->inode->data();
-    int i = parent->inode->d_size / sizeof(rfs_dentry_d);
+    auto* dentry_cursor = (rfs_dentry_d*)parent->inode->data();
+    int i = parent->inode->used_dat_sz / sizeof(rfs_dentry_d);
     for(;i > 0;i--, dentry_cursor++) {
         if(strcmp(dentry_cursor->name, name) == 0) {
             break;

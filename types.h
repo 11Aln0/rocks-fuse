@@ -25,20 +25,27 @@ enum file_type {
 struct rfs_dentry_d {
     uint64_t ino;
     file_type ftype;
-    char name[24];
+    char name[20];
 };
 
 class inode_t {
 
 private:
-    uint8_t* _data;
+    uint8_t* _data; // includes used and free areas
+    size_t attr_sz;
 public:
-    size_t d_size; // d_size of the data
-//    size_t f_size; // d_size of the whole inode
+    size_t size; // size of the whole inode, which is sizeof(data) + sizeof(size_t)
+    size_t used_dat_sz; // size of the used data areas, the persistent attributes begins here(not including used_dat_sz)
+
 public:
-    inode_t(void* data, size_t size);
+    inode_t();
+    inode_t(const char* data, size_t size);
     const uint8_t* data() const;
+    void before_write_back();
+
     void write_data(const char* buf, size_t size, off_t offset);
+    void truncate(size_t size);
+
     void append_dentry_d(rfs_dentry_d *d);
     void drop_dentry_d(rfs_dentry_d *d);
     ~inode_t();
@@ -54,7 +61,7 @@ struct rfs_dentry {
     file_type ftype;
     char name[24];
 
-    unique_ptr<inode_t> inode;
+    shared_ptr<inode_t> inode;
 };
 
 struct super_block {
