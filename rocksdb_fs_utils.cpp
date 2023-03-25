@@ -37,7 +37,7 @@ int rocksdb_fs::write_inode(uint64_t ino, inode_t *inode) {
         s = db->Put(WriteOptions(), key, Slice());
     } else {
         inode->before_write_back();
-        s = db->Put(WriteOptions(), key, Slice((char*)inode->data(), inode->used_dat_sz));
+        s = db->Put(WriteOptions(), key, Slice((char*)inode->data(), inode->used_dat_sz + inode->attr_sz));
     }
 
     if(!s.ok()) {
@@ -129,19 +129,27 @@ rfs_dentry_d* rocksdb_fs::new_dentry_d(const char* fname, file_type ftype) {
     return ret;
 }
 
-void rocksdb_fs::add_dentry_d(rfs_dentry* parent, rfs_dentry_d *dentry_d) {
+void rocksdb_fs::append_dentry_d(rfs_dentry* parent, rfs_dentry_d *dentry_d) {
     // update parent dentry
     parent->inode->append_dentry_d(dentry_d);
 
     // write back to parent inode
     write_inode(parent->ino, parent->inode.get());
-    // write back to new inode
-    write_inode(dentry_d->ino, nullptr);
 
 }
 
+/**
+ *  drop destination inode and copy to destination parent dentry
+ */
+void rocksdb_fs::overwrite_dentry_d(rfs_dentry *parent_dst, rfs_dentry_d *src, rfs_dentry_d *dst) {
+    drop_inode(dst->ino);
+    parent_dst->inode->overwrite_dentry_d(src, dst);
+}
+
+/**
+ * remove dentry in parent
+ */
 void rocksdb_fs::drop_dentry_d(rfs_dentry *parent, rfs_dentry_d* dentry_d) {
-    drop_dentry_d(dentry_d);
     parent->inode->drop_dentry_d(dentry_d);
     write_inode(parent->ino, parent->inode.get());
 }
@@ -149,19 +157,19 @@ void rocksdb_fs::drop_dentry_d(rfs_dentry *parent, rfs_dentry_d* dentry_d) {
 /**
  * drop dentry recursively
  */
-void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
-    if (dentry_d->ftype == dir) {
-        auto inode = unique_ptr<inode_t>(read_inode(dentry_d->ino));
-        if (inode->used_dat_sz != 0) {
-            auto dentry_cursor = (const rfs_dentry_d *) (inode->data());
-            size_t dir_cnt = inode->used_dat_sz / sizeof(rfs_dentry_d);
-            for (size_t i = 0; i < dir_cnt;i++, dentry_cursor++) {
-                drop_dentry_d(dentry_cursor);
-            }
-        }
-    }
-    drop_inode(dentry_d->ino);
-}
+//void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
+//    if (dentry_d->ftype == dir) {
+//        auto inode = unique_ptr<inode_t>(read_inode(dentry_d->ino));
+//        if (inode->used_dat_sz != 0) {
+//            auto dentry_cursor = (const rfs_dentry_d *) (inode->data());
+//            size_t dir_cnt = inode->used_dat_sz / sizeof(rfs_dentry_d);
+//            for (size_t i = 0; i < dir_cnt;i++, dentry_cursor++) {
+//                drop_dentry_d(dentry_cursor);
+//            }
+//        }
+//    }
+//    drop_inode(dentry_d->ino);
+//}
 
 /**
  * find directory entry by file name in a parent directory entry

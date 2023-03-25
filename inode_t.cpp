@@ -48,7 +48,7 @@ void inode_t::before_write_back() {
  */
 void inode_t::append_dentry_d(rfs_dentry_d *d) {
     size_t dat_sz = this->size - this->attr_sz;
-    if(this->used_dat_sz + sizeof(rfs_dentry_d) >= dat_sz) {
+    if(this->used_dat_sz + sizeof(rfs_dentry_d) > dat_sz) {
         this->size = this->used_dat_sz + sizeof(rfs_dentry_d) + this->attr_sz;
         auto tmp_dt = new uint8_t[this->size];
         memcpy(tmp_dt, this->_data, this->used_dat_sz);
@@ -76,6 +76,13 @@ void inode_t::drop_dentry_d(rfs_dentry_d *d) {
     }
 
     this->used_dat_sz -= sizeof(rfs_dentry_d);
+}
+
+/**
+ * overwrite the dst dentry of inode with src
+ */
+void inode_t::overwrite_dentry_d(rfs_dentry_d *src, rfs_dentry_d* dst) {
+    memcpy(dst, src, sizeof(rfs_dentry_d));
 }
 
 void inode_t::write_data(const char *buf, size_t size, off_t offset) {

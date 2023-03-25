@@ -17,7 +17,9 @@ using std::make_shared;
 using std::unique_ptr;
 using std::make_unique;
 
-enum file_type {
+#define MAX_FILE_NAME_LEN 54
+
+enum file_type: uint8_t {
     reg,
     dir
 };
@@ -25,15 +27,15 @@ enum file_type {
 struct rfs_dentry_d {
     uint64_t ino;
     file_type ftype;
-    char name[20];
+    char name[MAX_FILE_NAME_LEN + 1];
 };
 
 class inode_t {
 
 private:
     uint8_t* _data; // includes used and free areas
-    size_t attr_sz;
 public:
+    size_t attr_sz;
     size_t size; // size of the whole inode, which is sizeof(data) + sizeof(size_t)
     size_t used_dat_sz; // size of the used data areas, the persistent attributes begins here(not including used_dat_sz)
 
@@ -48,6 +50,7 @@ public:
 
     void append_dentry_d(rfs_dentry_d *d);
     void drop_dentry_d(rfs_dentry_d *d);
+    void overwrite_dentry_d(rfs_dentry_d *src, rfs_dentry_d* dst);
     ~inode_t();
 };
 
@@ -57,9 +60,9 @@ public:
 
 
 struct rfs_dentry {
-    int ino;
+    uint64_t ino;
     file_type ftype;
-    char name[24];
+    char name[MAX_FILE_NAME_LEN + 1];
 
     shared_ptr<inode_t> inode;
 };
