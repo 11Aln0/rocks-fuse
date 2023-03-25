@@ -160,25 +160,25 @@ int rocksdb_fs::mknod(const char *path, mode_t mode, uint64_t* ino) {
 
 int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offset, fuse_file_info* fi) {
     shared_ptr<inode_t> inode;
-//    if(!fi->direct_io) {
-//        inode = cache[fi->fh];
-//    }
+    unique_ptr<rfs_dentry> dentry;
 
-    bool found;
-    auto path_cpy = unique_ptr<char>(strdup(path));
-    auto dentry = lookup(path_cpy.get(), found);
-    if(!found) {
-        return -ENOENT;
+    if((fi->flags & O_DIRECT) == 0) {
+        inode = cache[fi->fh];
+    } else {
+        bool found;
+        auto path_cpy = unique_ptr<char>(strdup(path));
+        dentry = lookup(path_cpy.get(), found);
+        if(!found) {
+            return -ENOENT;
+        }
+        if(dentry->ftype == dir) {
+            return -EISDIR;
+        }
+
+        inode = dentry->inode;
     }
-    if(dentry->ftype == dir) {
-        return -EISDIR;
-    }
 
-    inode = dentry->inode;
-
-
-
-    if(offset > inode->used_dat_sz) {
+    if(offset > inode->size) {
         return 0;
     }
 
@@ -189,14 +189,17 @@ int rocksdb_fs::write(const char* path, const char *buf, size_t size, off_t offs
 
     inode->write_data(buf, size, offset);
 
-    write_inode(dentry->ino, dentry->inode.get());
+    if(fi->flags & O_DIRECT) {
+        write_inode(dentry->ino, dentry->inode.get());
+    }
+
 
     return size;
 }
 
 int rocksdb_fs::read(const char *path, char *buf, size_t size, off_t offset, fuse_file_info* fi) {
     shared_ptr<inode_t> inode;
-    if(!fi->direct_io) {
+    if((fi->flags & O_DIRECT) == 0) {
         inode = cache[fi->fh];
     }
     if(inode == nullptr) {
@@ -215,11 +218,11 @@ int rocksdb_fs::read(const char *path, char *buf, size_t size, off_t offset, fus
     }
 
 
-    if(offset >= inode->used_dat_sz) {
+    if(offset >= inode->size) {
         return 0;
     }
 
-    size = std::min(inode->used_dat_sz - offset, size);
+    size = std::min(inode->size - offset, size);
     memcpy(buf, inode->data() + offset, size);
     return size;
 }
@@ -309,13 +312,9 @@ int rocksdb_fs::open(const char *path, struct fuse_file_info* fi) {
         return -EISDIR;
     }
 
-    if(cache[dentry->ino] != nullptr) {
-        // the file has been opened
-        return -EACCES;
-    }
 
     fi->fh = dentry->ino;
-    if(!fi->direct_io) {
+    if((fi->flags & O_DIRECT) == 0) {
         cache[dentry->ino] = dentry->inode;
     }
 
@@ -330,7 +329,7 @@ int rocksdb_fs::create(const char *path, mode_t mode, fuse_file_info *fi) {
         return ret;
     }
 
-    if(!fi->direct_io) {
+    if((fi->flags & O_DIRECT) == 0) {
         cache[ino] = shared_ptr<inode_t>(read_inode(ino));
     }
 
@@ -340,18 +339,17 @@ int rocksdb_fs::create(const char *path, mode_t mode, fuse_file_info *fi) {
 }
 
 int rocksdb_fs::fsync(fuse_file_info *fi) {
-    auto inode = cache[fi->fh];
-    if(inode != nullptr) {
-        write_inode(fi->fh, inode.get());
+    if(cache.find(fi->fh) != cache.end()) {
+        write_inode(fi->fh, cache[fi->fh].get());
     }
     return 0;
 }
 
 int rocksdb_fs::release(fuse_file_info *fi) {
-    auto inode = cache[fi->fh];
-    if(inode != nullptr) {
-        write_inode(fi->fh, inode.get());
+    if(cache.find(fi->fh) != cache.end()) {
+        write_inode(fi->fh, cache[fi->fh].get());
         cache[fi->fh] = nullptr;
+        this->cache.erase(fi->fh);
     }
     return 0;
 }

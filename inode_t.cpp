@@ -90,7 +90,9 @@ void inode_t::write_data(const char *buf, size_t size, off_t offset) {
     size_t dat_sz = this->size - this->attr_sz;
     if(new_dat_sz <= dat_sz) {
         memcpy(this->_data, buf, size);
-        this->used_dat_sz = new_dat_sz;
+        if(new_dat_sz > this->used_dat_sz) {
+            this->used_dat_sz = new_dat_sz;
+        }
     } else {
         this->size = new_dat_sz + this->attr_sz;
         auto tmp_dt = new uint8_t[this->size];
@@ -99,8 +101,9 @@ void inode_t::write_data(const char *buf, size_t size, off_t offset) {
 
         delete[] this->_data;
         this->_data = tmp_dt;
+        this->used_dat_sz = new_dat_sz;
     }
-    this->used_dat_sz = new_dat_sz;
+
 
 }
 

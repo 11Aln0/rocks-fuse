@@ -23,7 +23,7 @@ using rocksdb::Slice;
 using rocksdb::ReadOptions;
 using rocksdb::WriteOptions;
 
-#define DEBUG 1
+//#define DEBUG 1
 
 #if defined(DEBUG)
 #define RFS_DEBUG(fn, msg) do {printf("RFS_DEBUG:[%s] %s\n", fn, msg); } while(0)
