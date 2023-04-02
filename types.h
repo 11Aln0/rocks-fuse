@@ -11,13 +11,17 @@
 #include<memory>
 #include <cstring>
 #include <cstdio>
+#include <string>
 
+using std::string;
 using std::shared_ptr;
 using std::make_shared;
 using std::unique_ptr;
 using std::make_unique;
 
+
 #define MAX_FILE_NAME_LEN 54
+#define FILE_COUNTER_THRESHOLD 1024
 
 enum file_type: uint8_t {
     reg,
@@ -67,14 +71,21 @@ struct rfs_dentry {
     shared_ptr<inode_t> inode;
 };
 
+// f_counter: new-created file counter, when it reaches FILE_COUNTER_THRESHOLD, write back the cur_ino to super_block
 struct super_block {
     uint64_t cur_ino;
     rfs_dentry_d root_dentry;
+    uint64_t f_counter;
 };
 
 struct super_block_d {
     uint64_t cur_ino;
 };
 
+struct inode_cache {
+    uint32_t ref_cnt;
+    string path; // only available in directory's cache
+    shared_ptr<inode_t> i;
+};
 
 #endif //ROCKS_FUSE_TYPES_H

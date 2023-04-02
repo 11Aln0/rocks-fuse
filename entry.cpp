@@ -3,18 +3,19 @@
 //
 
 #include "rocksdb_fs.h"
-#include <functional>
-
-using std::bind;
 
 struct fuse_options {
      const char *dbpath;
      int show_help;
+//     int attr_timeout;
+//     int entry_timeout;
 } fuse_opts;
 
 #define OPTION(t, p) {t, offsetof(fuse_options, p), 1}
 static const fuse_opt option_spec[] = {
         OPTION("--dbpath=%s", dbpath),
+//        OPTION("--attr_timeout=%d", attr_timeout),
+//        OPTION("--entry_timeout=%d", entry_timeout),
         OPTION("--help", show_help),
         FUSE_OPT_END
 };
@@ -45,8 +46,9 @@ int rfs_mknod(const char* path, mode_t mode, dev_t dev) {
 
 void show_help() {
     printf("File-system specific options:\n"
-           "    --dbpath=<s>        Path to save rocksdb's persistent file"
-           "                        (default: \".//db\")\n"
+           "    --dbpath=<s>        Path to save rocksdb's persistent file (default: \".//db\")"
+//           "    --attr_timeout      Timeout of file's attributes in seconds (default: 60)"
+//           "    --entry_timeout     Timeout of directory's entry in seconds (default: 60)"
            "\n");
 }
 
@@ -64,8 +66,10 @@ static const fuse_operations rfs_oper = {
         .write = [](const char* path, const char* buf, size_t size, off_t offset, fuse_file_info* fi) { return fs.write(path, buf, size, offset, fi); },
         .release = [](const char* path, fuse_file_info* fi){ return fs.release(fi); },
         .fsync = [](const char* path, int, fuse_file_info* fi) { return fs.fsync(fi); },
-        .readdir = [](const char* path, void* buf,fuse_fill_dir_t filter,
-                      off_t offset, struct fuse_file_info* fi, fuse_readdir_flags flags) { return fs.readdir(path, buf, filter); },
+        .opendir = [](const char* path, struct fuse_file_info* fi) { return fs.opendir(path, fi); },
+        .readdir = [](const char* path, void* buf, fuse_fill_dir_t filter,
+                      off_t off, struct fuse_file_info* fi, fuse_readdir_flags flags) { return fs.readdir(path, buf, filter, off, fi, flags); },
+        .releasedir = [](const char* path, struct fuse_file_info* fi) { return fs.releasedir(path, fi); },
         .init = rfs_init,
         .destroy = rfs_destroy,
         .create = [](const char* path, mode_t mode, fuse_file_info* fi){ return fs.create(path, mode, fi); },

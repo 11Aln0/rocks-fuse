@@ -124,19 +124,22 @@ rfs_dentry_d* rocksdb_fs::new_dentry_d(const char* fname, file_type ftype) {
     strcpy(ret->name, fname);
     ino_lock.lock();
     ret->ino = ++super.cur_ino;
-    db->Put(WriteOptions(), "0", Slice((char*)&super, sizeof(super_block_d))); // may exist someway faster
+    if(++super.f_counter == FILE_COUNTER_THRESHOLD) {
+        db->Put(WriteOptions(), "0", Slice((char*)&super, sizeof(super_block_d)));
+        super.f_counter = 0;
+    }
     ino_lock.unlock();
     return ret;
 }
 
-void rocksdb_fs::append_dentry_d(rfs_dentry* parent, rfs_dentry_d *dentry_d) {
-    // update parent dentry
-    parent->inode->append_dentry_d(dentry_d);
-
-    // write back to parent inode
-    write_inode(parent->ino, parent->inode.get());
-
-}
+//void rocksdb_fs::append_dentry_d(rfs_dentry* parent, rfs_dentry_d *dentry_d) {
+//    // update parent dentry
+//    parent->inode->append_dentry_d(dentry_d);
+//
+//    // write back to parent inode
+//    write_inode(parent->ino, parent->inode.get());
+//
+//}
 
 /**
  *  drop destination inode and copy to destination parent dentry
@@ -149,37 +152,37 @@ void rocksdb_fs::overwrite_dentry_d(rfs_dentry *parent_dst, rfs_dentry_d *src, r
 /**
  * remove dentry in parent
  */
-void rocksdb_fs::drop_dentry_d(rfs_dentry *parent, rfs_dentry_d* dentry_d) {
-    parent->inode->drop_dentry_d(dentry_d);
-    write_inode(parent->ino, parent->inode.get());
-}
-
-/**
- * drop dentry recursively
- */
-//void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
-//    if (dentry_d->ftype == dir) {
-//        auto inode = unique_ptr<inode_t>(read_inode(dentry_d->ino));
-//        if (inode->used_dat_sz != 0) {
-//            auto dentry_cursor = (const rfs_dentry_d *) (inode->data());
-//            size_t dir_cnt = inode->used_dat_sz / sizeof(rfs_dentry_d);
-//            for (size_t i = 0; i < dir_cnt;i++, dentry_cursor++) {
-//                drop_dentry_d(dentry_cursor);
-//            }
-//        }
-//    }
-//    drop_inode(dentry_d->ino);
+//void rocksdb_fs::drop_dentry_d(rfs_dentry *parent, rfs_dentry_d* dentry_d) {
+//    parent->inode->drop_dentry_d(dentry_d);
+//    write_inode(parent->ino, parent->inode.get());
 //}
 
 /**
- * find directory entry by file name in a parent directory entry
+ * drop dentry of directory recursively
+ */
+void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
+    if (dentry_d->ftype == dir) {
+        auto inode = unique_ptr<inode_t>(read_inode(dentry_d->ino));
+        if (inode->used_dat_sz != 0) {
+            auto dentry_cursor = (const rfs_dentry_d *) (inode->data());
+            size_t dir_cnt = inode->used_dat_sz / sizeof(rfs_dentry_d);
+            for (size_t i = 0; i < dir_cnt;i++, dentry_cursor++) {
+                drop_dentry_d(dentry_cursor);
+            }
+        }
+    }
+    drop_inode(dentry_d->ino);
+}
+
+/**
+ * find directory entry by file name in a parent's inode
  * @param parent
  * @param name
  * @return
  */
-rfs_dentry_d* rocksdb_fs::find_dentry(rfs_dentry *parent, const char *name) {
-    auto* dentry_cursor = (rfs_dentry_d*)parent->inode->data();
-    int i = parent->inode->used_dat_sz / sizeof(rfs_dentry_d);
+rfs_dentry_d* rocksdb_fs::find_dentry(inode_t* inode, const char *name) {
+    auto* dentry_cursor = (rfs_dentry_d*)inode->data();
+    int i = inode->used_dat_sz / sizeof(rfs_dentry_d);
     for(;i > 0;i--, dentry_cursor++) {
         if(strcmp(dentry_cursor->name, name) == 0) {
             break;
@@ -193,7 +196,10 @@ rfs_dentry_d* rocksdb_fs::find_dentry(rfs_dentry *parent, const char *name) {
     return dentry_cursor;
 }
 
-
+/**
+ * @param path
+ * @param div_idx divider index of parent and filename
+ */
 char* rocksdb_fs::parent_path(const char *path, int& div_idx) {
     // remove the filename
     div_idx = strlen(path);
