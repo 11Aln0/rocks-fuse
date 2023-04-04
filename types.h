@@ -84,8 +84,15 @@ struct super_block_d {
 
 struct inode_cache {
     uint32_t ref_cnt;
-    string path; // only available in directory's cache
+//    string path; // only available in directory's cache
     shared_ptr<inode_t> i;
 };
+
+struct dir_cache {
+    off_t off; // offset of stating
+    shared_ptr<inode_t> i;
+};
+
+
 
 #endif //ROCKS_FUSE_TYPES_H

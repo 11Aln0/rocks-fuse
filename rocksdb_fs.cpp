@@ -62,19 +62,46 @@ int rocksdb_fs::close() {
 
 int rocksdb_fs::mkdir(const char* path, mode_t mode) {
     uint64_t ino;
-    return mknod(path, mode, &ino);
+     return mknod(path, mode, &ino);
 }
 
 int rocksdb_fs::getattr(const char *path, struct stat *stat) {
-    bool found;
 
-    auto path_cpy = unique_ptr<char>(strdup(path));
-    auto dentry = lookup(path_cpy.get(), found);
-    if(!found) {
-        return  -ENOENT;
+    bool lock = false;
+    int k;
+    auto p_path = unique_ptr<char>(parent_path(path, k));
+    shared_ptr<inode_t> parent_inode;
+
+    cache_lock.lock();
+    if(dir_caches.find(p_path.get()) != dir_caches.end()) {
+        parent_inode = dir_caches[p_path.get()].i;
+        lock = true;
+    } else {
+        cache_lock.unlock();
+        bool found;
+        auto parent_dentry = lookup(p_path.get(), found);
+
+        if(!found) {
+            return -ENOENT;
+        }
+
+        parent_inode = parent_dentry->inode;
     }
 
-    if(dentry->ftype == dir) {
+    rfs_dentry_d* target_dentry;
+    if(path[1] == '\0') {
+        target_dentry = &super.root_dentry;
+    } else {
+        target_dentry = find_dentry_d(parent_inode.get(), path + k + 1);
+        if(target_dentry == nullptr) {
+            if(lock) cache_lock.unlock();
+            return -ENOENT;
+        }
+    }
+
+    auto target_inode = unique_ptr<inode_t>(read_inode(target_dentry->ino));
+
+    if(target_dentry->ftype == dir) {
         stat->st_mode = S_IFDIR | 0777;
     } else {
         stat->st_mode = S_IFREG | 0777;
@@ -83,7 +110,7 @@ int rocksdb_fs::getattr(const char *path, struct stat *stat) {
     stat->st_gid = getgid();
     stat->st_uid = getuid();
     stat->st_nlink = 1;
-    stat->st_size = dentry->inode->used_dat_sz;
+    stat->st_size = target_inode->used_dat_sz;
 
     return 0;
 }
@@ -108,9 +135,8 @@ int rocksdb_fs::opendir(const char *path, fuse_file_info *fi) {
         if(cache.find(fi->fh) != cache.end()) {
             cache[dentry->ino].ref_cnt++;
         } else {
-            inode_cache c = {1, path, dentry->inode};
-            cache[dentry->ino] = c;
-            dir_cache[c.path] = dentry->inode;
+            cache[dentry->ino] = {1, dentry->inode};
+            dir_caches[path] = {0, dentry->inode};
         }
         cache_lock.unlock();
     }
@@ -125,8 +151,8 @@ int rocksdb_fs::releasedir(const char *path, fuse_file_info *fi) {
         if(--cache[fi->fh].ref_cnt == 0) {
             write_inode(fi->fh, cache[fi->fh].i.get());
             // release directory cache
-            if(dir_cache.find(path) != dir_cache.end()) {
-                dir_cache.erase(path);
+            if(dir_caches.find(path) != dir_caches.end()) {
+                dir_caches.erase(path);
             }
             cache.erase(fi->fh);
         }
@@ -160,16 +186,17 @@ int rocksdb_fs::readdir(const char* path, void* buf, fuse_fill_dir_t filter,
     }
 
     auto dentry_cursor = (rfs_dentry_d*) dir_inode->data();
-    dentry_cursor += off;
+    dentry_cursor += ((dir_caches[path].off) + off);
     unique_ptr<inode_t> cur_inode;
-    size_t dir_cnt = dir_inode->used_dat_sz / sizeof(rfs_dentry_d);
-    if(dir_cnt <= off) {
-        if(lock) cache_lock.unlock_shared();
-        return 0;
-    }
-
+    // include the deleted directory in case of stating and deleting simultaneously.
+    size_t dir_cnt = (dir_inode->size - dir_inode->attr_sz) / sizeof(rfs_dentry_d);
     struct stat stat = {};
     int ret;
+
+    if(dir_cnt <= off) {
+        goto unlock;
+    }
+
     for(off_t i = off;i < dir_cnt; dentry_cursor++, i++) {
         if(dentry_cursor->ftype == dir) {
             stat.st_mode = S_IFDIR | 0777;
@@ -182,10 +209,11 @@ int rocksdb_fs::readdir(const char* path, void* buf, fuse_fill_dir_t filter,
         stat.st_blocks = 1;
         ret = filter(buf, dentry_cursor->name, &stat, i + 1, FUSE_FILL_DIR_PLUS);
         if(ret == 1) {
-            return 0;
+            goto unlock;
         }
     }
 
+    unlock:
     if(lock) cache_lock.unlock_shared();
     return 0;
 }
@@ -207,9 +235,9 @@ int rocksdb_fs::mknod(const char *path, mode_t mode, uint64_t* ino) {
     }
 
     cache_lock.lock();
-    if(dir_cache.find(par_path.get()) != dir_cache.end()) {
-        parent_inode = dir_cache[par_path.get()];
-        rfs_dentry_d* target_dentry = find_dentry(parent_inode.get(), path_cpy.get() + k + 1);
+    if(dir_caches.find(par_path.get()) != dir_caches.end()) {
+        parent_inode = dir_caches[par_path.get()].i;
+        rfs_dentry_d* target_dentry = find_dentry_d(parent_inode.get(), path_cpy.get() + k + 1);
 
         if(target_dentry != nullptr) {
             // if inode is read from cached, the cache lock needs to be released
@@ -338,8 +366,8 @@ int rocksdb_fs::rmdir(const char *path) {
     auto p_path = unique_ptr<char>(parent_path(path, k));
     string key = p_path.get();
     cache_lock.lock();
-    if(dir_cache.find(key) != dir_cache.end()) {
-        parent_inode = dir_cache[key];
+    if(dir_caches.find(key) != dir_caches.end()) {
+        parent_inode = dir_caches[key].i;
     } else {
         cache_lock.unlock();
         auto parent_dentry = lookup(p_path.get(), found);
@@ -353,7 +381,7 @@ int rocksdb_fs::rmdir(const char *path) {
     }
 
 
-    rfs_dentry_d* target_dentry = find_dentry(parent_inode.get(), path + k + 1);
+    rfs_dentry_d* target_dentry = find_dentry_d(parent_inode.get(), path + k + 1);
 
     if(target_dentry == nullptr) {
         return -ENOENT;
@@ -377,6 +405,7 @@ int rocksdb_fs::rmdir(const char *path) {
 }
 
 int rocksdb_fs::unlink(const char *path) {
+
     bool found;
     int k;
     // if write_back_ino is not equal to 0, it means that the parent inode is not cached
@@ -385,8 +414,8 @@ int rocksdb_fs::unlink(const char *path) {
     shared_ptr<inode_t> parent_inode;
 
     cache_lock.lock();
-    if(dir_cache.find(p_path.get()) != dir_cache.end()) {
-        parent_inode = dir_cache[p_path.get()];
+    if(dir_caches.find(p_path.get()) != dir_caches.end()) {
+        parent_inode = dir_caches[p_path.get()].i;
     } else {
         cache_lock.unlock();
         auto parent_dentry = lookup(p_path.get(), found);
@@ -399,7 +428,7 @@ int rocksdb_fs::unlink(const char *path) {
         parent_inode = parent_dentry->inode;
     }
 
-    rfs_dentry_d* target_dentry = find_dentry(parent_inode.get(), path + k + 1);
+    rfs_dentry_d* target_dentry = find_dentry_d(parent_inode.get(), path + k + 1);
 
     if(target_dentry == nullptr) {
         // if inode is read from cached, the cache lock needs to be released
@@ -413,6 +442,7 @@ int rocksdb_fs::unlink(const char *path) {
     if(write_back_ino) {
         write_inode(write_back_ino, parent_inode.get());
     } else {
+        dir_caches[p_path.get()].off--; // correct the real offset
         cache_lock.unlock();
     }
 
@@ -434,7 +464,7 @@ int rocksdb_fs::rename(const char* src, const char* dst) {
         return -ENOENT;
     }
 
-    rfs_dentry_d* src_file_dentry = find_dentry(src_parent_dentry->inode.get(), src + k + 1);
+    rfs_dentry_d* src_file_dentry = find_dentry_d(src_parent_dentry->inode.get(), src + k + 1);
     if(src_file_dentry == nullptr) {
         return -ENOENT;
     }
@@ -454,7 +484,7 @@ int rocksdb_fs::rename(const char* src, const char* dst) {
     }
 
     // process destination
-    rfs_dentry_d* dst_file_dentry = find_dentry(dst_parent_dentry->inode.get(), dst + k + 1);
+    rfs_dentry_d* dst_file_dentry = find_dentry_d(dst_parent_dentry->inode.get(), dst + k + 1);
     if(dst_file_dentry == nullptr) {
         dst_parent_dentry->inode->append_dentry_d(src_file_dentry);
         write_inode(dst_parent_dentry->ino, dst_parent_dentry->inode.get());
@@ -488,7 +518,7 @@ int rocksdb_fs::open(const char *path, struct fuse_file_info* fi) {
         if(cache.find(fi->fh) != cache.end()) {
             cache[dentry->ino].ref_cnt++;
         } else {
-            inode_cache c = {1, "", dentry->inode};
+            inode_cache c = {1, dentry->inode};
             cache[dentry->ino] = c;
         }
         cache_lock.unlock();
@@ -509,7 +539,7 @@ int rocksdb_fs::create(const char *path, mode_t mode, fuse_file_info *fi) {
 
     if((fi->flags & O_DIRECT) == 0) {
         cache_lock.lock();
-        inode_cache c = {1, "", shared_ptr<inode_t>(read_inode(ino))};
+        inode_cache c = {1, shared_ptr<inode_t>(read_inode(ino))};
         cache[ino] = c;
         cache_lock.unlock();
     }

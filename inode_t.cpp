@@ -5,6 +5,11 @@
 #include "types.h"
 #include <cstddef>
 
+/**
+ * |------------------size-----------------|
+ * |---------data_size----------||-attr_sz-|
+ * |--used_dat_sz--||---nused---||-attr_sz-|
+ */
 
 /**
  * empty inode
@@ -12,7 +17,7 @@
 inode_t::inode_t() {
     this->used_dat_sz = 0;
     this->attr_sz = sizeof(inode_t) - offsetof(inode_t, used_dat_sz) - sizeof(size_t);
-    this->size = 0;
+    this->size = this->attr_sz;
     this->_data = new uint8_t[this->size + this->attr_sz];
 }
 
@@ -22,10 +27,10 @@ inode_t::inode_t() {
  * @param size the size of the whole inode
  */
 inode_t::inode_t(const char* data, size_t size) {
-    this->used_dat_sz = size;
+    this->size = size;
+    // currently all attributes above used_dat_sz and used_dat_sz itself will not be persistent
     this->attr_sz = sizeof(inode_t) - offsetof(inode_t, used_dat_sz) - sizeof(size_t);
-    this->size = size + sizeof(rfs_dentry_d) + attr_sz; // reserve one dentry's space
-
+    this->used_dat_sz = size - attr_sz;
     this->_data = new uint8_t[this->size];
 
     memcpy(this->_data, data, this->used_dat_sz);

@@ -13,10 +13,13 @@
 #include <string>
 #include <mutex>
 #include <shared_mutex>
+#include <condition_variable>
 
 using std::map;
 using std::mutex;
 using std::shared_mutex;
+using std::unique_lock;
+using std::condition_variable;
 using std::string;
 using rocksdb::DB;
 using rocksdb::Status;
@@ -40,8 +43,13 @@ private:
     mutex ino_lock;
     shared_mutex cache_lock;
 
+//    // keep the state of stating to prevent reading and unlink dir simultaneously(like bonnie++ tool)
+//    mutex unlink_lock;
+//    condition_variable unlink_cv;
+//    bool unlinkable = true;
+
     map<uint64_t, inode_cache> cache;
-    map<string, shared_ptr<inode_t>> dir_cache;
+    map<string, dir_cache> dir_caches;
 
 private:
     inode_t* read_inode(uint64_t ino);
@@ -51,7 +59,7 @@ private:
     unique_ptr<rfs_dentry> lookup(char* path, bool &found);
 
     rfs_dentry_d* new_dentry_d(const char* fname, file_type ftype);
-    rfs_dentry_d* find_dentry(inode_t* inode, const char *name);
+    rfs_dentry_d* find_dentry_d(inode_t* inode, const char *name);
 //    void append_dentry_d(rfs_dentry* parent, rfs_dentry_d* dentry_d);
     void drop_dentry_d(const rfs_dentry_d *dentry_d);
     void overwrite_dentry_d(rfs_dentry* parent_dst, rfs_dentry_d* src, rfs_dentry_d* dst);

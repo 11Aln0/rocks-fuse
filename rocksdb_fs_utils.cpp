@@ -180,7 +180,7 @@ void rocksdb_fs::drop_dentry_d(const rfs_dentry_d *dentry_d) {
  * @param name
  * @return
  */
-rfs_dentry_d* rocksdb_fs::find_dentry(inode_t* inode, const char *name) {
+rfs_dentry_d* rocksdb_fs::find_dentry_d(inode_t* inode, const char *name) {
     auto* dentry_cursor = (rfs_dentry_d*)inode->data();
     int i = inode->used_dat_sz / sizeof(rfs_dentry_d);
     for(;i > 0;i--, dentry_cursor++) {
